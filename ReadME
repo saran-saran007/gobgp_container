@@ -2,6 +2,17 @@ Prerequisite:- A working docker environment in Linux.
 
 chmod +x build.sh
 ./build.sh <gobgp image tag> Dockerfile2
+Note: Use sudo for the above command, if required.
 
 example:-
-./build.sh apr23 Dockerfile2
+sudo ./build.sh apr23 Dockerfile2
+
+Checking the basic bgp peering status:-
+
+$ sudo docker exec -ti bgp1 gobgp global
+AS:        65001
+Router-ID: 172.18.0.2
+Listening Port: 179, Addresses: 0.0.0.0, ::
+$ sudo docker exec -ti bgp1 gobgp neighbor
+Peer          AS  Up/Down State       |#Received  Accepted
+172.18.0.3 65001 00:00:12 Establ      |        0         0
