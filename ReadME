@@ -1,3 +1,5 @@
+Prerequisite:- A working docker environment in Linux.
+
 chmod +x build.sh
 ./build.sh <gobgp image tag> Dockerfile2
 
