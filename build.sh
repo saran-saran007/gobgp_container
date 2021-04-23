@@ -15,6 +15,9 @@ docker image prune
 docker images
 echo "existing containers"
 docker ps -a
+docker network rm bgp_network
+echo "existing networks"
+docker network ls
 if [ $# -eq 0 ]
   then
     tag='latest'
@@ -25,20 +28,24 @@ if [ $# -eq 0 ]
     docker image rm gobgp:$tag
 fi
 sudo docker build -f $2 -t gobgp:$tag .
-docker run -d --name  bgp1 -ti gobgp:$tag
-docker run -d --name  bgp2 -ti gobgp:$tag
+#docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp1 -ti gobgp:$tag
+#docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp2 -ti gobgp:$tag
+docker run --privileged -d --name  bgp1 -ti gobgp:$tag
+docker run --privileged -d --name  bgp2 -ti gobgp:$tag
 echo "current images"
 docker images
 echo "current containers"
 docker ps -a
 echo "creating docker network"
-docker network create -d bridge bgp_network
+docker network create -d bridge bgp_network --ipv6 --subnet=2001::/64
 echo "Connecting containers"
 docker network connect bgp_network bgp1
 docker network connect bgp_network bgp2
 echo "fetching container ip addresses"
 export bgp1IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp1`
 export bgp2IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp2`
+export bgp1IPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp1`
+export bgp2IPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp2`
 (envsubst < testnode1.conf) > bgp1.conf
 (envsubst < testnode2.conf) > bgp2.conf
 docker cp bgp1.conf bgp1:/opt/workspace/mygobgp/bgp1.conf
@@ -55,8 +62,8 @@ echo "wrote the config to bgp1"
 docker exec -ti bgp1 cat /opt/workspace/mygobgp/bgp1.conf
 echo "wrote the config to bgp2"
 docker exec -ti bgp2 cat /opt/workspace/mygobgp/bgp2.conf
-docker exec -d bgp1  gobgpd -f /opt/workspace/mygobgp/bgp1.conf
-docker exec -d bgp2  gobgpd -f /opt/workspace/mygobgp/bgp2.conf
+docker exec -d bgp1  gobgpd -l debug -f /opt/workspace/mygobgp/bgp1.conf
+docker exec -d bgp2  gobgpd -l debug -f /opt/workspace/mygobgp/bgp2.conf
 echo "gobgp daemon started"
 echo "checking status of gobgp1"
 docker exec -ti bgp1 gobgp global
