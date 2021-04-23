@@ -71,7 +71,12 @@ docker exec -ti bgp1 gobgp neighbor
 echo "checking status of gobgp2"
 docker exec -ti bgp2 gobgp global
 docker exec -ti bgp2 gobgp neighbor
+echo "********************************"
 echo "exec the following cmd  to attach - docker exec -ti bgp1/bgp2 bash"
+echo "exec the following cmds  to view the logs:-"
+echo "docker exec -ti bgp1 tail -f /opt/workspace/mygobgp/bgp1.log"
+echo "docker exec -ti bgp2 tail -f /opt/workspace/mygobgp/bgp2.log"
+echo "********************************"
 echo "showing bgp1 logs"
 docker exec -ti bgp1 tail -f  /opt/workspace/mygobgp/bgp1.log
 
