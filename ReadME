@@ -1,6 +1,9 @@
-Prerequisite:- A working docker environment in Linux.
+Prerequisite:- 
+1. A working docker environment in Linux.
+2. Refer - https://docs.docker.com/config/daemon/ipv6/ if you require ipv6 transport.
+3. Make sure the subnets used my the script to create docker networks is not already used in your environment.
 
-chmod +x build.sh
+
 ./build.sh <gobgp image tag> Dockerfile2
 Note: Use sudo for the above command, if required.
 
