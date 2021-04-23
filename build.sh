@@ -62,8 +62,8 @@ echo "wrote the config to bgp1"
 docker exec -ti bgp1 cat /opt/workspace/mygobgp/bgp1.conf
 echo "wrote the config to bgp2"
 docker exec -ti bgp2 cat /opt/workspace/mygobgp/bgp2.conf
-docker exec -d bgp1  gobgpd -l debug -f /opt/workspace/mygobgp/bgp1.conf
-docker exec -d bgp2  gobgpd -l debug -f /opt/workspace/mygobgp/bgp2.conf
+docker exec -d bgp1  bash -c "nohup gobgpd -l debug -f /opt/workspace/mygobgp/bgp1.conf > /opt/workspace/mygobgp/bgp1.log"
+docker exec -d bgp2  bash -c "nohup gobgpd -l debug -f /opt/workspace/mygobgp/bgp2.conf > /opt/workspace/mygobgp/bgp2.log"
 echo "gobgp daemon started"
 echo "checking status of gobgp1"
 docker exec -ti bgp1 gobgp global
@@ -72,4 +72,6 @@ echo "checking status of gobgp2"
 docker exec -ti bgp2 gobgp global
 docker exec -ti bgp2 gobgp neighbor
 echo "exec the following cmd  to attach - docker exec -ti bgp1/bgp2 bash"
+echo "showing bgp1 logs"
+docker exec -ti bgp1 tail -f  /opt/workspace/mygobgp/bgp1.log
 
