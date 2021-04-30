@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-if [ $# -eq 0 ]
+if [ $# -ne 5 ]
   then
-    echo "Usage: ./build.sh <image-tag> <dockerfile to use>"
-    echo "Example: ./build.sh apr22 Dockerfile_apt_install_gobgp"
+    echo "Usage: ./build.sh <image-tag> <dockerfile to use> <External DUT IP> <Local IP to expose container1> <Local Ip to expose container2>"
+    echo "Example: ./build.sh latest Dockerfile2 172.16.3.1 172.16.3.6 172.16.3.7"
     exit
 fi
     
@@ -30,8 +30,12 @@ fi
 sudo docker build -f $2 -t gobgp:$tag .
 #docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp1 -ti gobgp:$tag
 #docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp2 -ti gobgp:$tag
-docker run --privileged -d --name  bgp1 -ti gobgp:$tag
-docker run --privileged -d --name  bgp2 -ti gobgp:$tag
+#Set DUT and exposed container IP env variables
+export DUTIP=$3
+export EXPOSEC1IP=$4
+export EXPOSEC2IP=$5
+docker run --privileged -d -p $EXPOSEC1IP:179:179 --name  bgp1 -ti gobgp:$tag
+docker run --privileged -d -p $EXPOSEC2IP:179:179 --name  bgp2 -ti gobgp:$tag
 echo "current images"
 docker images
 echo "current containers"
@@ -42,6 +46,7 @@ echo "Connecting containers"
 docker network connect bgp_network bgp1
 docker network connect bgp_network bgp2
 echo "fetching container ip addresses"
+#Set env variables required
 export bgp1IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp1`
 export bgp2IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp2`
 export bgp1IPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp1`

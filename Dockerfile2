@@ -1,5 +1,5 @@
 FROM ubuntu:18.04
-RUN apt-get update && apt-get install -y gobgpd && apt-get install -y iputils-ping && apt-get install -y iproute2
+RUN apt-get update && apt-get install -y gobgpd && apt-get install -y iputils-ping && apt-get install -y iproute2 && apt-get install -y net-tools
 WORKDIR /opt/workspace/mygobgp
 
 

@@ -2,20 +2,33 @@ Prerequisite:-
 1. A working docker environment in Linux.
 2. Refer - https://docs.docker.com/config/daemon/ipv6/ if you require ipv6 transport.
 3. Make sure the subnets used my the script to create docker networks is not already used in your environment.
+4. Create a secondary IP on the interface exposed to DUT. Example:- "sudo ifconfig ens224:2 172.16.3.7 netmask 255.255.255.0 up"
 
 
-./build.sh <gobgp image tag> Dockerfile2
+./build.sh <gobgp image tag> Dockerfile2 <DUT IP ADDR> <IP addr to expose container1> <IP addr to expose container2>
 Note: Use sudo for the above command, if required.
 
 example:-
-sudo ./build.sh apr23 Dockerfile2
+sudo ./build.sh latest Dockerfile2 6.6.6.61 172.16.3.6 172.16.3.7
+
+Sample interface exposed to DUT:-
+4: ens224: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 00:50:56:97:4d:ea brd ff:ff:ff:ff:ff:ff
+    inet 172.16.3.6/24 brd 172.16.3.255 scope global ens224
+       valid_lft forever preferred_lft forever
+    inet 172.16.3.7/24 brd 172.16.3.255 scope global secondary ens224:2
+       valid_lft forever preferred_lft forever
+
+---
 
 Checking the basic bgp peering status:-
 
-$ sudo docker exec -ti bgp1 gobgp global
-AS:        65001
-Router-ID: 172.18.0.2
+cloud-user@bgp-peer-n6-sarav:~/workspace/gobgp_tests/gobgp_container$ sudo docker exec -ti bgp1 gobgp global
+AS:        64511
+Router-ID: 172.25.0.2
 Listening Port: 179, Addresses: 0.0.0.0, ::
-$ sudo docker exec -ti bgp1 gobgp neighbor
+cloud-user@bgp-peer-n6-sarav:~/workspace/gobgp_tests/gobgp_container$ sudo docker exec -ti bgp1 gobgp neighbor
 Peer          AS  Up/Down State       |#Received  Accepted
-172.18.0.3 65001 00:00:12 Establ      |        0         0
+6.6.6.61   64512 00:40:23 Establ      |        0         0
+172.25.0.3 64511 00:40:24 Establ      |        0         0
+2001::3    64511 00:40:24 Establ      |        0         0
