@@ -1,87 +1,180 @@
 #!/usr/bin/env bash
-if [ $# -ne 5 ]
-  then
-    echo "Usage: ./build.sh <image-tag> <dockerfile to use> <External DUT IP> <Local IP to expose container1> <Local Ip to expose container2>"
-    echo "Example: ./build.sh latest Dockerfile2 172.16.3.1 172.16.3.6 172.16.3.7"
-    exit
-fi
-    
-echo "cleaning up"
-docker kill bgp1
-docker kill bgp2
-docker container prune
-echo "exising images"
-docker image prune
-docker images
-echo "existing containers"
-docker ps -a
-docker network rm bgp_network
-echo "existing networks"
-docker network ls
-if [ $# -eq 0 ]
-  then
-    tag='latest'
-    docker image rm gobgp:latest
-    exit
-  else
-    tag=$1
-    docker image rm gobgp:$tag
-fi
-sudo docker build -f $2 -t gobgp:$tag .
+
+nextip(){
+    IP=$1
+    IP_HEX=$(printf '%.2X%.2X%.2X%.2X\n' `echo $IP | sed -e 's/\./ /g'`)
+    NEXT_IP_HEX=$(printf %.8X `echo $(( 0x$IP_HEX + 1 ))`)
+    NEXT_IP=$(printf '%d.%d.%d.%d\n' `echo $NEXT_IP_HEX | sed -r 's/(..)/0x\1 /g'`)
+    echo "$NEXT_IP"
+}
+
+configdut(){
+	echo "Cleaning up old nbr config file"
+	rm newnbr.conf
+	rm full_config.conf
+        IP=`ip addr show $2 | grep inet | head -n 1 | awk '{printf $2}' | awk -F/ '{print $1}'`
+        NUM=$4
+        for i in $(seq 1 $NUM); do
+                export CIP=$IP
+                (envsubst < nbr.conf) >> newnbr.conf
+		echo "NEIGHBOR $i"
+		cat newnbr.conf
+		echo "==============="
+                IP=$(nextip $IP)
+        done
+	sleep 1
+	sed '/neighbors:/r newnbr.conf' running.conf > full_config.conf
+	echo "copying running config to dut"
+        scp full_config.conf cloud-user@$1:~/running.conf
+	echo "Going to copy running config to routing-container"
+	#ssh -l cloud-user $1 "kubectl cp running.conf  ngupf-routing-n0-0 /config/ngupf-routing/gobgpd.conf"
+	ssh -l cloud-user $1 "kubectl cp running.conf ngupf-routing-n0-0:/opt/config/gobgpd.conf"
+}
+
+cleanup(){
+	echo "cleaning up"
+	NUM=$4
+	for i in $(seq 1 $NUM); do
+		docker kill bgp$i
+	done
+	sudo docker container prune
+	echo "exising images"
+	sudo docker image prune
+	sudo docker images
+	echo "existing containers"
+	sudo docker ps -a
+	sudo docker network rm bgp_network
+	echo "existing networks"
+	sudo docker network ls
+	sudo docker image rm gobgp:latest
+	ip addr show | grep ens224: | grep inet | awk '{print $2" "$(NF)}' > secIntfs
+        echo "present secondary interfaces"
+        cat secIntfs
+        awk  '{ printf "sudo ip address del %s dev %s\n", $1, $2 }' secIntfs > delcmds
+        echo "executing delete commands"
+        cat delcmds
+        while read cmd
+        do
+                `$cmd`
+        done < delcmds
+        rm secIntfs
+        rm delcmds
+}
+
 #docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp1 -ti gobgp:$tag
 #docker run --sysctl net.ipv6.conf.all.disable_ipv6=0 -d --name  bgp2 -ti gobgp:$tag
-#Set DUT and exposed container IP env variables
-export DUTIP=$3
-export EXPOSEC1IP=$4
-export EXPOSEC2IP=$5
-docker run --privileged -d -p $EXPOSEC1IP:179:179 --name  bgp1 -ti gobgp:$tag
-docker run --privileged -d -p $EXPOSEC2IP:179:179 --name  bgp2 -ti gobgp:$tag
-echo "current images"
-docker images
-echo "current containers"
-docker ps -a
-echo "creating docker network"
-docker network create -d bridge bgp_network --ipv6 --subnet=2001::/64
-echo "Connecting containers"
-docker network connect bgp_network bgp1
-docker network connect bgp_network bgp2
-echo "fetching container ip addresses"
-#Set env variables required
-export bgp1IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp1`
-export bgp2IP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp2`
-export bgp1IPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp1`
-export bgp2IPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp2`
-(envsubst < testnode1.conf) > bgp1.conf
-(envsubst < testnode2.conf) > bgp2.conf
-docker cp bgp1.conf bgp1:/opt/workspace/mygobgp/bgp1.conf
-docker cp bgp2.conf bgp2:/opt/workspace/mygobgp/bgp2.conf
-#docker exec -d bgp1 /bin/bash -c export bgp1IP=$bgp1IP
-#docker exec -d bgp1 /bin/bash -c export bgp2IP=$bgp2IP
-#docker exec -d bgp2 /bin/bash -c export bgp1IP=$bgp1IP
-#docker exec -d bgp2 /bin/bash -c export bgp2IP=$bgp2IP
-#docker exec -ti bgp1 echo "bgp1IP: $bgp1IP bgp2IP: $bgp2IP"
-#docker exec -ti bgp2 echo "bgp1IP: $bgp1IP bgp2IP: $bgp2IP"
-#docker exec -ti bgp1 bash -c "printf '[global.config]\n  as = 65001\n  router-id = \"$bgp1IP\"\n\n[[neighbors]]\n  [neighbors.config]\n    neighbor-address = \"$bgp2IP\"\n    peer-as = 65001\n    [neighbors.add-paths.config]\n      send-max = 8\n      receive = true\n  [neighbors.transport.config]\n     local-address = \"$bgp1IP\"\n' > /opt/workspace/mygobgp/bgp1.conf"
-#docker exec -ti bgp2 bash -c "printf '[global.config]\n  as = 65001\n  router-id = \"$bgp2IP\"\n\n[[neighbors]]\n  [neighbors.config]\n    neighbor-address = \"$bgp1IP\"\n    peer-as = 65001\n    [neighbors.add-paths.config]\n      send-max = 8\n      receive = true\n  [neighbors.transport.config]\n     local-address = \"$bgp2IP\"\n' > /opt/workspace/mygobgp/bgp2.conf"
-echo "wrote the config to bgp1"
-docker exec -ti bgp1 cat /opt/workspace/mygobgp/bgp1.conf
-echo "wrote the config to bgp2"
-docker exec -ti bgp2 cat /opt/workspace/mygobgp/bgp2.conf
-docker exec -d bgp1  bash -c "nohup gobgpd -l debug -f /opt/workspace/mygobgp/bgp1.conf > /opt/workspace/mygobgp/bgp1.log"
-docker exec -d bgp2  bash -c "nohup gobgpd -l debug -f /opt/workspace/mygobgp/bgp2.conf > /opt/workspace/mygobgp/bgp2.log"
-echo "gobgp daemon started"
-echo "checking status of gobgp1"
-docker exec -ti bgp1 gobgp global
-docker exec -ti bgp1 gobgp neighbor
-echo "checking status of gobgp2"
-docker exec -ti bgp2 gobgp global
-docker exec -ti bgp2 gobgp neighbor
-echo "********************************"
-echo "exec the following cmd  to attach - docker exec -ti bgp1/bgp2 bash"
-echo "exec the following cmds  to view the logs:-"
-echo "docker exec -ti bgp1 tail -f /opt/workspace/mygobgp/bgp1.log"
-echo "docker exec -ti bgp2 tail -f /opt/workspace/mygobgp/bgp2.log"
-echo "********************************"
-echo "showing bgp1 logs"
-docker exec -ti bgp1 tail -f  /opt/workspace/mygobgp/bgp1.log
 
+
+
+createContainers(){
+	# Create the N contianers
+	NUM=$4
+	IP=$EXPOSEC1IP
+	for i in $(seq 1 $NUM); do
+		echo "Creating containers with exposed ip:$IP"
+		addridx=`expr $i + 1`
+		docker run --privileged -d -p $IP:179:179 --name  bgp$i -ti gobgp:latest
+		IP=$(nextip $IP)
+		echo "Creating secondary ip:$IP on logical interface:$addridx"
+		sudo ifconfig $2:$addridx $IP netmask 255.255.255.0 up
+	done
+}
+
+showContainers(){
+	#Show Build image and containers
+	echo "current images"
+	docker images
+	echo "current containers"
+	docker ps -a
+}
+
+
+setupContainers(){
+	echo "creating docker network"
+	sudo docker network create -d bridge bgp_network --ipv6 --subnet=2001::/64
+	for i in $(seq 1 $NUM); do
+		#echo "Connecting containers"
+		sudo docker network connect bgp_network bgp$i
+		#Set env variables required
+		export CIP=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.IPAddress }}' bgp$i`
+		export CIPV6=`docker container inspect -f '{{ .NetworkSettings.Networks.bgp_network.GlobalIPv6Address }}' bgp$i`
+		echo "fetching container ip addresses $CIP $CIPV6"
+		#Create container configs
+		(envsubst < testnodeN.conf) > container.conf
+		docker cp container.conf bgp$i:/opt/workspace/mygobgp/bgp$i.conf
+		echo "wrote the config to bgp$i"
+		docker exec -ti bgp$i cat /opt/workspace/mygobgp/bgp$i.conf
+		docker exec -d bgp$i  bash -c "nohup gobgpd -l debug -f /opt/workspace/mygobgp/bgp$i.conf > /opt/workspace/mygobgp/bgp$i.log"
+		echo "gobgp daemon started in  container#$i"
+	done
+}
+monitorBgp(){
+	echo "********************************"
+	echo "exec the following cmd  to attach - docker exec -ti bgp<n> bash"
+	echo "exec the following cmds  to view the logs:-"
+	echo "docker exec -ti bgp1 tail -f /opt/workspace/mygobgp/bgp<n>.log"
+	echo "********************************"
+	echo "showing bgp neighbors"
+        NUM=$4
+        for i in $(seq 1 $NUM); do
+		echo "==============="
+		docker exec -ti bgp$i gobgp neighbor
+        done
+}
+
+pumpRoutesFromContainer(){
+	CONTAINER=$1
+	NUMROUTES=$2
+	IP="1.1.1.1"
+	echo "pumping $NUMROUTES routes from container $CONTAINER"
+        for i in $(seq 1 $NUMROUTES); do
+		docker exec $CONTAINER gobgp global rib add $IP/32
+                IP=$(nextip $IP)
+	done
+}
+
+pumpRoutes(){
+        NUMNBR=$4
+        NUMROUTES=$5
+	echo "pumping $NUMROUTES routes from each of the $NUMNBR neighbors to DUT"
+        for i in $(seq 1 $NUMNBR); do
+		pumpRoutesFromContainer bgp$i $NUMROUTES &
+        done
+
+}
+
+#Run the script
+if [ $# -ne 5 ]
+  then
+    echo "Usage: ./build.sh <DUT-MGMT-IP> <DUT linking interface> <BGP-Peer-ip> <num-of-containers/peers> <num routes>"
+    echo "Example: ./build.sh  10.194.55.64 ens224 6.6.6.61 4 100"
+    exit
+fi
+export DUTIP=$3
+export NUMCONTAINER=$4
+#Cleanup previous run
+cleanup $1 $2 $3 $4
+# Build the image
+sudo docker build -f Dockerfile2 -t gobgp:latest .
+#Set DUT and exposed container IP env variables
+export EXPOSEC1IP=`ip addr show $2 | grep inet | head -n 1 | awk '{printf $2}' | awk -F/ '{print $1}'`
+#Create the containers
+createContainers $1 $2 $3 $4
+#Show status
+showContainers
+#setup the containers and start gobgp
+setupContainers
+#Create and copy config to DUT
+echo " copying config to DUT"
+configdut $1 $2 $3 $4
+#Check bgp peering status
+monitorBgp $1 $2 $3 $4
+#wait for 20 seconds for bgp sessions to come up
+echo "waiting for 20 seconds for the bgp sessions to come up"
+sleep 20
+#Check bgp peering status
+monitorBgp $1 $2 $3 $4
+# pump routes
+time pumpRoutes $1 $2 $3 $4 $5
+wait
+echo "Script completed execution"
